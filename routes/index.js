@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const calendaServices = require("../calendar/calendar_services");
+const calServices = require("../calendar/calendar_services");
+const calActions = require("../calendar/calendar_actions")
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
@@ -8,10 +9,18 @@ router.get('/', function(req, res, next) {
 });
 
 router.get("/days", function(req, res, next){
-
-  calendaServices.getListEvent();
-
-  res.render("index", {days: "days"});
+  let year = req.query.year;
+  let month = req.query.month;
+  var returnValue = []
+  if (calActions.checkValidMonthYear(month, year)){
+    console.log("valid input")
+  }else{
+    console.log("invalid input")
+  }
+  calServices.getListEvent();
+  return res.status(200).json({
+    day:returnValue
+  })
 });
 
 
