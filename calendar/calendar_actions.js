@@ -1,4 +1,3 @@
-
 const checkValidMonthYear = function(month, year){
     if (month && year){
         try{

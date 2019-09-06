@@ -9,15 +9,17 @@ router.get('/', function(req, res, next) {
 });
 
 router.get("/days", function(req, res, next){
-  let year = req.query.year;
-  let month = req.query.month;
+  var year = req.query.year;
+  var month = req.query.month;
   var returnValue = []
   if (calActions.checkValidMonthYear(month, year)){
     console.log("valid input")
   }else{
     console.log("invalid input")
   }
-  calServices.getListEvent();
+  month = parseInt(month)
+  year = parseInt(year)
+  calServices.getListEvent(month, year);
   return res.status(200).json({
     day:returnValue
   })
