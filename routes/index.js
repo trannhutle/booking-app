@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const calServices = require("../calendar/calendar_services");
-const calActions = require("../calendar/calendar_actions")
+const calServices = require("../calendar/calendarServices");
+const calActions = require("../calendar/calendarActions")
 
 /* GET home page. */
 router.get('/', function(req, res, next) {

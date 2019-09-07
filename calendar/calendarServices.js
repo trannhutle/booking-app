@@ -1,10 +1,13 @@
-const oauth2Services = require("./oauth2_services");
+const oauth2Services = require("./oauth2Services");
 const { google } = require("googleapis");
 const calendar = google.calendar({ version: "v3" });
 const moment = require("moment")
 const timzone = require("moment-timezone")
 const zone = "Australia/Sydney";
 const sydZone = timzone.tz(zone).format("Z");
+const BookingDate = require("../dataModels/bookingDate");
+const BookingEvent = require("../dataModels/bookingEvent");
+
 
 const getListEvent = function (month, year) {
     oauth2Client = oauth2Services.getOauth2Client();
@@ -48,9 +51,8 @@ const getListEvent = function (month, year) {
         for (i = 1; i <= constDaysInMonth; i++) {
             // check event is on a day
             let d = formatTwoDigitInt(i);
-            let date = `${y}-${m}-${d}`;
-            const starOfDay = timzone.tz(date + " 09:00:00", "YYYY-MM-DD HH:mm:ss", zone);
-            const endOfDay = timzone.tz(date + " 16:15:00", "YYYY-MM-DD HH:mm:ss", zone);
+            let today = getTodayInfo(`${y}-${m}-${d}`);
+
             // compare
             var eventsInOneDay = [];
             event.map((event, i) => {
@@ -58,13 +60,15 @@ const getListEvent = function (month, year) {
                 var eventStart = event.start.dateTime || event.start.date;
                 var eventEnd = event.end.dateTime || event.end.date;
 
-                eventStart = moment.tz(eventStart, zone);
-                // console.log(eventStart.format());
-                let eventDate = eventStart.format("YYYY-MM-DD")
-                if ( moment(date).isSame(eventDate) && eventStart.isAfter(starOfDay) && eventStart.isBefore(endOfDay)) {
+                if (isEventOnDay(eventStart, today)) {
                     console.log("Have value")
                     eventsInOneDay.push(eventStart);
+                    let e = new BookingEvent()
+                    e.startTime = timzone.tz(eventStart, zone).format()
+                    e.endTime = timzone.tz(eventEnd, zone).format()
+                    eventsInOneDay.push(e)
                 }
+
                 // eventStart = moment(eventStart).utc()
                 // eventEnd =  moment(eventEnd).utc()
                 // // let eventStart = "2019-09-07 10:00"
@@ -75,46 +79,104 @@ const getListEvent = function (month, year) {
             if (eventsInOneDay.length > 0) {
                 // console.log("There are events on date: " + `${year}-${m}-${d} 16:15:00`);
                 var timeSlot = `${y}-${m}-${d} 09:00:00`;
+                var slot = createNewBookingSlot(timeSlot)
 
-                var slot = timzone.tz(timeSlot, "YYYY-MM-DD HH:mm:ss", zone);
+                while (moment(slot.startTime).isBefore(today.endOfDay)) {
 
-                console.log(slot.format());
-                console.log(endOfDay.format());
+                    console.log(slot);
 
-                while (slot.isBefore(endOfDay)) {
+                    var isValid = false;
+                    // Sort by time ascending
+                    eventsInOneDay = eventsInOneDay.sort((a, b) => {
+                        if (moment(a.endTime).isBefore(b.startTime)) {
+                            return -1;
+                        }
+                        if (moment(a.startTime).isAfter(b.endTime)) {
+                            return 1;
+                        }
+                        return 0;
+                    });
+                    console.log(eventsInOneDay.length);
 
-                var addedSlot = slot.clone().add("minutes", 40);
-                
-                var isValid = false;
-                // Sort by time ascending
-                eventsInOneDay = eventsInOneDay.sort((a, b) => a - b);
-                console.log(eventsInOneDay.length);
-
-                for (var ii = 0; ii < eventsInOneDay.length; ii++) {
-                    for (var zz = 1; zz < eventsInOneDay.length; zz++) {
+                    for (var ii = 0; ii < eventsInOneDay.length; ii++) {
                         var bookedEvent = eventsInOneDay[ii];
-                        var bookedEventEnd = bookedEvent.clone().add("minutes", 40);
 
-                        var nextBookedEvent = eventsInOneDay[zz];
-                        
                         // console.log("bookedEvent: " + bookedEvent.format())
                         // console.log("nextBookedEvent: " + nextBookedEvent.format())
-
                         // slot is before a booked slot
-                        if (slot.isAfter(bookedEventEnd) && addedSlot.isBefore(nextBookedEvent)) {
-                            console.log("There is a slot available");
-                            isValid = true;
-                            console.log("available slot starts: " + slot.format())
-                            console.log("available slot end: "+ addedSlot.format())
+
+                        // if (moment(slot.endTime).isBefore(bookedEvent.endTime)
+                        //     && moment(slot.endTime).isAfter(bookedEvent.startTime)) {
+
+                        if ((moment(slot.startTime).isBefore(bookedEvent.endTime) &&
+                            moment(slot.endTime).isBefore(bookedEvent.endTime)
+                            && moment(slot.endTime).isAfter(bookedEvent.startTime)) ||
+                            (moment(slot.startTime).isAfter(bookedEvent.endTime)
+                                && moment(slot.endTime).isBefore(bookedEvent.endTime)
+                                && moment(slot.endTime).isAfter(bookedEvent.startTime))) {
+                        //     console.log();
+                            console.log("There is a booked slot");
+                            console.log(bookedEvent.startTime)
+                            console.log(bookedEvent.endTime)
+                            console.log();
+
+                            isValid = false;
+                        } else {
+                            // console.log();
+                            // console.log("There is a slot available: ");
+                            // console.log(slot.startTime)
+                            // console.log(slot.endTime)
+                            // console.log();
                         }
                     }
-                }
-                slot = addedSlot.clone()
+                    slot = createNewBookingSlot(moment(slot.startTime, "YYYY-MM-DD HH:mm:ss").add("minutes", 5), 40);
                 }
             }
         }
     })
 }
+
+function createNewBookingSlot(startTime, duration) {
+    let be = new BookingEvent();
+    be.startTime = timzone.tz(startTime, "YYYY-MM-DD HH:mm:ss", zone);
+    be.endTime = be.startTime.clone().add("minutes", duration).format();
+    be.startTime = be.startTime.format();
+    return be;
+}
+
+function getTodayInfo(date) {
+    let d = timzone.tz(date, "YYYY-MM-DD", zone);
+    let starOfDay = timzone.tz(date + " 09:00:00", "YYYY-MM-DD HH:mm:ss", zone).format();
+    let endOfDay = timzone.tz(date + " 16:15:00", "YYYY-MM-DD HH:mm:ss", zone).format();
+    let today = new BookingDate();
+    today.date = d;
+    today.startDate = starOfDay;
+    today.endDate = endOfDay;
+    return today;
+}
+
+function isEventOnDay(eventStart, today) {
+    let eventStartDate = timzone.tz(eventStart, "YYYY-MM-DD HH:mm:ss", zone);
+    let eventDate = eventStartDate.format("YYYY-MM-DD");
+    let date = moment(today.date, "YYYY-MM-DD");
+
+    // console.log();
+    // console.log(eventStartDate);
+    // console.log(date);
+
+    // console.log(date.isSame(eventDate));
+    // console.log(eventStartDate.isAfter(today.startDate));
+    // console.log(eventStartDate.isBefore(today.endDate));
+    // console.log();
+
+    if (date.isSame(eventDate) &&
+        eventStartDate.isAfter(today.startDate) && eventStartDate.isBefore(today.endDate)) return true;
+    return false;
+}
+
+
+
+
 
 function getDaysMonth(month, year) {
     // Day 0 is the last day in the previous month
