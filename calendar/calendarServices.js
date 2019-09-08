@@ -62,7 +62,6 @@ const getListEvent = function (month, year) {
 
                 if (isEventOnDay(eventStart, today)) {
                     console.log("Have value")
-                    eventsInOneDay.push(eventStart);
                     let e = new BookingEvent()
                     e.startTime = timzone.tz(eventStart, zone).format()
                     e.endTime = timzone.tz(eventEnd, zone).format()
@@ -79,66 +78,105 @@ const getListEvent = function (month, year) {
             if (eventsInOneDay.length > 0) {
                 // console.log("There are events on date: " + `${year}-${m}-${d} 16:15:00`);
                 var timeSlot = `${y}-${m}-${d} 09:00:00`;
-                var slot = createNewBookingSlot(timeSlot)
+                var slot = createNewBookingSlot(timeSlot, null, 40);
 
-                while (moment(slot.startTime).isBefore(today.endOfDay)) {
+                // while (moment(slot.startTime).isBefore(today.endOfDay)) {
 
-                    console.log(slot);
+                //     console.log(slot);
 
-                    var isValid = false;
-                    // Sort by time ascending
-                    eventsInOneDay = eventsInOneDay.sort((a, b) => {
-                        if (moment(a.endTime).isBefore(b.startTime)) {
-                            return -1;
-                        }
-                        if (moment(a.startTime).isAfter(b.endTime)) {
-                            return 1;
-                        }
-                        return 0;
-                    });
-                    console.log(eventsInOneDay.length);
-
-                    for (var ii = 0; ii < eventsInOneDay.length; ii++) {
-                        var bookedEvent = eventsInOneDay[ii];
-
-                        // console.log("bookedEvent: " + bookedEvent.format())
-                        // console.log("nextBookedEvent: " + nextBookedEvent.format())
-                        // slot is before a booked slot
-
-                        // if (moment(slot.endTime).isBefore(bookedEvent.endTime)
-                        //     && moment(slot.endTime).isAfter(bookedEvent.startTime)) {
-
-                        if ((moment(slot.startTime).isBefore(bookedEvent.endTime) &&
-                            moment(slot.endTime).isBefore(bookedEvent.endTime)
-                            && moment(slot.endTime).isAfter(bookedEvent.startTime)) ||
-                            (moment(slot.startTime).isAfter(bookedEvent.endTime)
-                                && moment(slot.endTime).isBefore(bookedEvent.endTime)
-                                && moment(slot.endTime).isAfter(bookedEvent.startTime))) {
-                        //     console.log();
-                            console.log("There is a booked slot");
-                            console.log(bookedEvent.startTime)
-                            console.log(bookedEvent.endTime)
-                            console.log();
-
-                            isValid = false;
-                        } else {
-                            // console.log();
-                            // console.log("There is a slot available: ");
-                            // console.log(slot.startTime)
-                            // console.log(slot.endTime)
-                            // console.log();
-                        }
+                //     var isValid = false;
+                //     // Sort by time ascending
+                eventsInOneDay = eventsInOneDay.sort((a, b) => {
+                    if (moment(a.endTime).isBefore(b.startTime)) {
+                        return -1;
                     }
-                    slot = createNewBookingSlot(moment(slot.startTime, "YYYY-MM-DD HH:mm:ss").add("minutes", 5), 40);
+                    if (moment(a.startTime).isAfter(b.endTime)) {
+                        return 1;
+                    }
+                    return 0;
+                });
+                console.log(eventsInOneDay.length);
+
+                // Find slots in the booked slots
+                var availableSlot = []
+                for (var ii = 0; ii < eventsInOneDay.length; ii++) {
+                    var bookedEvent = eventsInOneDay[ii];
+
+                    if ((ii + 1) != eventsInOneDay.length) {
+
+                        let nextBookedEvent = eventsInOneDay[ii + 1]
+                        console.log(bookedEvent)
+                        console.log(nextBookedEvent)
+                        let diffToNextEvent = moment(nextBookedEvent.startTime).diff(bookedEvent.endTime, "minutes");
+
+                        if (diffToNextEvent > 45) {
+                            console.log("There are some slots in the middle of the bookings");
+                            let availableSlots = findNextAvaiableSLots(bookedEvent.endTime,nextBookedEvent.startTime)
+                            console.log(availableSlots);
+                        }
+                        console.log(diffToNextEvent)
+                    }
+                    // console.log("bookedEvent: " + bookedEvent.format())
+                    // console.log("nextBookedEvent: " + nextBookedEvent.format())
+                    // slot is before a booked slot
+
+                    // if (moment(slot.endTime).isBefore(bookedEvent.endTime)
+                    //     && moment(slot.endTime).isAfter(bookedEvent.startTime)) {
+
+
+
+                    // if ((moment(slot.startTime).isBefore(bookedEvent.endTime) &&
+                    //     moment(slot.endTime).isBefore(bookedEvent.endTime)
+                    //     && moment(slot.endTime).isAfter(bookedEvent.startTime)) ||
+                    //     (moment(slot.startTime).isAfter(bookedEvent.endTime)
+                    //         && moment(slot.endTime).isBefore(bookedEvent.endTime)
+                    //         && moment(slot.endTime).isAfter(bookedEvent.startTime))) {
+                    // //     console.log();
+                    //     console.log("There is a booked slot");
+                    //     console.log(bookedEvent.startTime)
+                    //     console.log(bookedEvent.endTime)
+                    //     console.log();
+
+                    //     isValid = false;
+                    // } else {
+                    //     // console.log();
+                    //     // console.log("There is a slot available: ");
+                    //     // console.log(slot.startTime)
+                    //     // console.log(slot.endTime)
+                    //     // console.log();
+                    // }
+
+
+
                 }
+
+
+                //     slot = createNewBookingSlot(moment(slot.startTime, "YYYY-MM-DD HH:mm:ss").add("minutes", 5), 40);
+                // }
             }
         }
     })
 }
 
-function createNewBookingSlot(startTime, duration) {
+function findNextAvaiableSLots(startAvailableTime, endAvailableTime) {
+    var slot = createNewBookingSlot(startAvailableTime, 5, 40)
+    let availableSlots = [];
+
+    while (moment(slot.startTime).isBefore(endAvailableTime)) {
+        console.log(slot);
+        var isValid = false;
+        availableSlots.push(slot);
+        slot = createNewBookingSlot(slot.endTime, 5, 40);
+    }
+    return availableSlots
+}
+
+function createNewBookingSlot(startTime, delayInMinute, duration) {
     let be = new BookingEvent();
     be.startTime = timzone.tz(startTime, "YYYY-MM-DD HH:mm:ss", zone);
+    if (delayInMinute){
+        be.startTime.add(delayInMinute, "minutes");
+    }
     be.endTime = be.startTime.clone().add("minutes", duration).format();
     be.startTime = be.startTime.format();
     return be;
