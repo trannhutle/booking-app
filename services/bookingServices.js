@@ -31,7 +31,30 @@ const getAvailableTimeSlots = function (req, res, next) {
     });
 }
 
+const bookTimeslot = function (req, res, next) {
+    var day = req.body.day;
+    var month = req.body.month;
+    var year = req.body.year;
+    var hour = req.body.hour;
+    var minute = req.body.minute;
+    if (!moment(`${year}-${month}-${day} ${hour}:${minute}`, "YYYY-MM-DD HH:mm").isValid()) {
+        console.log(`Invalid input: ${day}-${month}-${year} ${hour}:${minute}`);
+        return next(422, []);
+    }
+    let slot = {
+        day:parseInt(day),
+        month:parseInt(month),
+        year:parseInt(year),
+        hour:parseInt(hour),
+        minute:parseInt(minute),
+    }
+    calendarServices.checkTimeslotIsValid(slot, (status, message, data) => {
+        next(200, data) 
+    });
+}
+
 module.exports = {
     getBookableDays,
-    getAvailableTimeSlots
+    getAvailableTimeSlots,
+    bookTimeslot,
 }

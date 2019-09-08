@@ -22,6 +22,14 @@ router.get("/timeslots", function(req, res, next){
   });
 })
 
+router.post("/book", function(req, res, next){
+  bookingServices.bookTimeslot(req, res, (status, result) => {
+    return res.status(200).json({
+      timeslots: result
+    })
+  });
+})
+
 
 router.get("/timeslots", function(req, res, next){
   res.render("index", {slot: "None"})

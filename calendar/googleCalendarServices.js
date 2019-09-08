@@ -2,8 +2,8 @@ const oauth2Services = require("./oauth2Services");
 const { google } = require("googleapis");
 const calendar = google.calendar({ version: "v3" });
 const timezone = require("moment-timezone")
-const zone = "Australia/Sydney";
-const sydZone = timezone.tz(zone).format("Z");
+// const zone = "Australia/Sydney";
+// const sydZone = timezone.tz(zone).format("Z");
 
 
 function getEventList(startTime, endTime, callback) {
@@ -11,20 +11,59 @@ function getEventList(startTime, endTime, callback) {
     calendar.events.list({
         auth: oauth2Client,
         calendarId: "anltnm93@gmail.com",
-        timeZone: `UTC${sydZone}`,
+        timeZone: "UTC+00",
         timeMin: startTime,
         timeMax: endTime,
     }, (error, resp) => {
-        if (error) return console.log('The API returned an error: ' + error);
+        if (error) {
+            console.log('The API returned an error: ' + error);
+            callback(true, null)
+        }
         const events = resp.data.items;
         if (events.length) {
             console.log("There are events on your calenda");
-            callback(events)
         } else {
             console.log("No upcomming events founds.")
         }
+        callback(true, events)
     })
 }
+
+function insertEvent(startTime, endTime, callback) {
+    let oauth2Client = oauth2Services.getOauth2Client();
+    let event = {
+        "Summary":"Add new event",
+        "start":{
+            "dateTime": startTime,
+            "timeZone": "UTC"
+        },
+        "end":{
+            "dateTime": endTime,
+            "timeZone": "UTC"
+        }
+    }
+    calendar.events.insert({
+        auth: oauth2Client,
+        calendarId: "anltnm93@gmail.com",
+        resource: event
+    }, (error, resp) => {
+        if (error){
+            console.log('The API returned an error: ' + error);
+            return callback(false, null);
+        }  
+        const events = resp.start;
+        if (events) {
+            console.log("Added event time: " + events.dateTime)
+            console.log("Add new event successfully");
+        } else {
+            console.log("Add new event failed")
+        }
+        callback(true, events)
+    })
+}
+
+
 module.exports = {
-    getEventList
+    getEventList,
+    insertEvent
 }
