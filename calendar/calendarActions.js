@@ -22,6 +22,10 @@ const checkValidMonthYear = function(month, year){
     }
 }
 
+const checkValidDay = function(day, month, year){
+    
+}
+
 module.exports = {
     checkValidMonthYear,
 }

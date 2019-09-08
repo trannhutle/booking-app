@@ -1,65 +1,72 @@
-const oauth2Services = require("./oauth2Services");
-const { google } = require("googleapis");
-const calendar = google.calendar({ version: "v3" });
+const gCalendarServices = require("./googleCalendarServices")
 const moment = require("moment")
 const timzone = require("moment-timezone")
 const zone = "Australia/Sydney";
-const sydZone = timzone.tz(zone).format("Z");
 const BookingDate = require("../dataModels/bookingDate");
 const BookingEvent = require("../dataModels/bookingEvent");
+const DayInfo = require("../dataModels/dayInfo")
 const StartWorkingTime = "09:00:00";
 
-const getListEvent = function (month, year) {
-    oauth2Client = oauth2Services.getOauth2Client();
-
-    const constDaysInMonth = parseInt(getDaysMonth(month, year));
-    const m = formatTwoDigitInt(month);
-    const y = year;
-
-    var startOfMonth = `${year}-${m}-01 09:00:00`;
-    var endOfMonth = `${year}-${m}-${constDaysInMonth} 17:00:00`;
-
-    startOfMonth = timzone.tz(startOfMonth, "YYYY-MM-DD HH:mm:ss", zone).format();
-    endOfMonth = timzone.tz(endOfMonth, "YYYY-MM-DD HH:mm:ss", zone).format();
-    console.log(`startOfMonth: ${startOfMonth} -  endOfMonth: ${endOfMonth}`);
-
-    console.log("Go here from call API")
-    getEventList(startOfMonth, endOfMonth, (event) => {
-        var eventList = event;
-        for (i = 1; i <= constDaysInMonth; i++) {
+const getBookableDays = function (month, year, callback) {
+    let monthInfo = getMonthInfo(month, year);
+    gCalendarServices.getEventList(monthInfo.start, monthInfo.end, (event) => {
+        var eventList = event; // Events on the list will be removed when they are valid
+        let bookingDays = [];
+        for (i = 1; i <= monthInfo.daysInMonth; i++) {
             // check event is on a day
             let d = formatTwoDigitInt(i);
-            let today = getTodayInfo(`${y}-${m}-${d}`);
+            let today = getTodayInfo(`${monthInfo.year}-${monthInfo.month}-${d}`);
 
             // Check if the event is on a date
-            let result = filterEventsInDay(today, eventList);
+            let result = getEventsInDay(today, eventList);
             eventList = result.eventList;
             var eventsInDay = result.eventsInDay;
-
             let availableSlots = findAvailableSlotsInDay(today, eventsInDay);
-            console.log("")
-            console.log("")            
-            console.log("There are available slots: ")
+            let hasTimeSlot = false;
+            if (availableSlots.length > 0) {
+                hasTimeSlot = true;
+            }
             console.log(availableSlots);
-            console.log("")
-            console.log("")
-            console.log("")
-
+            let dInfo = new DayInfo();
+            dInfo.day = i;
+            dInfo.hasTimeSlots = hasTimeSlot;
+            bookingDays.push(dInfo);
         }
+        callback(bookingDays);
     })
 }
 
-function filterEventsInDay(today, eventList) {
+const getAvailableTimeSlot = function(day, month, year, callback){
+    let todayStr = `${year}-${formatTwoDigitInt(month)}-${formatTwoDigitInt(day)}`
+    let today = getTodayInfo(todayStr);
+
+    console.log(today.endDate)
+    console.log(today.startDate)
+
+    gCalendarServices.getEventList(today.startDate, today.endDate, (event) => {
+        // Events on the list will be removed when they are valid
+        var eventList = event; 
+        // Check if the event is on a date
+        let result = getEventsInDay(today, eventList);
+        eventList = result.eventList;
+        var eventsInDay = result.eventsInDay;
+        var availableSlots = findAvailableSlotsInDay(today, eventsInDay);
+        availableSlots = transformToIsoTime(availableSlots); 
+        callback(availableSlots);
+    })
+}
+
+function getEventsInDay(today, eventList) {
     let eventsInDay = [];
     eventList = eventList.filter((event, i) => {
         let eventStart = event.start.dateTime || event.start.date;
         let eventEnd = event.end.dateTime || event.end.date;
         if (isEventOnDay(eventStart, eventEnd, today)) {
             console.log("There is an vaid event on a day")
-            let e = new BookingEvent()
-            e.startTime = timzone.tz(eventStart, zone).format()
-            e.endTime = timzone.tz(eventEnd, zone).format()
-            eventsInDay.push(e)
+            let e = new BookingEvent();
+            e.startTime = timzone.tz(eventStart, zone).format();
+            e.endTime = timzone.tz(eventEnd, zone).format();
+            eventsInDay.push(e);
             return false;
         }
         return true
@@ -75,10 +82,10 @@ function findAvailableSlotsInDay(today, bookedEvents) {
         console.log("There are booked events: " + events.length);
         // Sort by time ascending
         events = events.sort((a, b) => {
-            if (moment(a.endTime).isBefore(b.startTime)) {
+            if (moment(a.endTime).isSameOrBefore(b.startTime)) {
                 return -1;
             }
-            if (moment(a.startTime).isAfter(b.endTime)) {
+            if (moment(a.startTime).isSameOrAfter(b.endTime)) {
                 return 1;
             }
             return 0;
@@ -87,7 +94,7 @@ function findAvailableSlotsInDay(today, bookedEvents) {
         // Find slots from start to the first booking slot                
         let firstBookedEvent = events[0];
         availableSlots = findNextAvaiableSLots(today.startDate, today.startDate, firstBookedEvent.startTime)
-        console.log("There are slots from the beginning to the first booking " + availableSlots);
+        // console.log("There are slots from the beginning to the first booking " + availableSlots);
 
         // Find slots in the booked slots
         for (var ii = 0; ii < events.length; ii++) {
@@ -104,7 +111,7 @@ function findAvailableSlotsInDay(today, bookedEvents) {
                 let nextBookedEvent = events[ii + 1]
                 let availableLotsBetweenBookings = findNextAvaiableSLots(lastEventEndTime, bookedEvent.endTime, nextBookedEvent.startTime);
                 availableSlots = availableSlots.concat(availableLotsBetweenBookings);
-                console.log("There are some slots in the middle of the bookings" + availableLotsBetweenBookings);
+                // console.log("There are some slots in the middle of the bookings" + availableLotsBetweenBookings);
             }
         }
 
@@ -112,12 +119,12 @@ function findAvailableSlotsInDay(today, bookedEvents) {
         let lastBookingEvent = events[events.length - 1];
         let availableLotsAfterBookings = findNextAvaiableSLots(lastBookingEvent.endTime, lastBookingEvent.endTime, today.endDate)
         availableSlots = availableSlots.concat(availableLotsAfterBookings);
-        console.log("There are slots after the last booking " + availableLotsAfterBookings);
+        // console.log("There are slots after the last booking " + availableLotsAfterBookings);
 
     } else {
         console.log("There is no booked event on " + today.date);
         availableSlots = findNextAvaiableSLots(today.startDate, today.startDate, today.endDate)
-        console.log("Return all available slots in a day: " + availableSlots);
+        // console.log("Return all available slots in a day: " + availableSlots);
     }
 
     return availableSlots;
@@ -128,10 +135,11 @@ function needABreak(previousEventTime, currentEventTime) {
     let startWorkingTime = moment(StartWorkingTime, "HH:mm:sss")
     let prevEventTime = timzone.tz(previousEventTime, "YYYY-MM-DD HH:mm:ss", zone);
 
-    if (startWorkingTime.hour() == prevEventTime.hour() &&  startWorkingTime.minutes() == prevEventTime.minutes()) {
+    // It does not need a break at the begining of the day
+    if (startWorkingTime.hour() == prevEventTime.hour() && startWorkingTime.minutes() == prevEventTime.minutes()) {
         return false;
     }
-    let diffToNextEvent = prevEventTime.diff(currentEventTime,"minutes")
+    let diffToNextEvent = prevEventTime.diff(currentEventTime, "minutes")
     if (diffToNextEvent <= 5) {
         return true;
     }
@@ -154,12 +162,11 @@ function findNextAvaiableSLots(lastEventEndTime, startAvailableTime, endAvailabl
         // Innitialise the first slot
         var slot = createNewBookingSlot(startAvailableTime, breakTime, 40)
         while (moment(slot.startTime).isBefore(endAvailableTime) && moment(slot.endTime).isBefore(endAvailableTime)) {
-            console.log(slot);
+            // console.log(slot);
             availableSlots.push(slot);
             slot = createNewBookingSlot(slot.endTime, 5, 40);
-
-            console.log("endAvailableTime: " + endAvailableTime)
-            console.log("slot.endTime: " + slot.endTime)
+            // console.log("endAvailableTime: " + endAvailableTime)
+            // console.log("slot.endTime: " + slot.endTime)
         }
     }
     return availableSlots
@@ -171,10 +178,22 @@ function createNewBookingSlot(startTime, delayInMinute, duration) {
     if (delayInMinute) {
         be.startTime.add(delayInMinute, "minutes");
     }
-    be.endTime = be.startTime.clone().add("minutes", duration).format();
+    be.endTime = be.startTime.clone().add( duration,"minutes").format();
     be.startTime = be.startTime.format();
     return be;
 }
+
+function transformToIsoTime(slots){
+    let tranformedSlots = [];
+    slots.forEach(slot => {
+        let s = slot;
+        s.startTime = timzone.tz(s.startTime, "YYYY-MM-DD HH:mm:ss", zone).toISOString();
+        s.endTime = timzone.tz(s.endTime, "YYYY-MM-DD HH:mm:ss", zone).toISOString();
+        tranformedSlots.push(s)
+    });
+    return tranformedSlots;
+}
+
 
 function getTodayInfo(date) {
     let d = timzone.tz(date, "YYYY-MM-DD", zone).format();
@@ -206,25 +225,19 @@ function formatTwoDigitInt(number) {
     return ("0" + number).slice(-2);
 }
 
-function getEventList(start, end, callback) {
-    // `UTC${sydZone}`: Query the time by Sydney time zone
-    calendar.events.list({
-        auth: oauth2Client,
-        calendarId: "anltnm93@gmail.com",
-        timeZone: `UTC${sydZone}`,
-        timeMin: start,
-        timeMax: end,
-    }, (error, resp) => {
-        if (error) return console.log('The API returned an error: ' + error);
-        const events = resp.data.items;
-        if (events.length) {
-            console.log("There are events on your calenda");
-            callback(events)
-        } else {
-            console.log("No upcomming events founds.")
-        }
-    })
+function getMonthInfo(month, year) {
+    const daysInMonth = parseInt(getDaysMonth(month, year));
+    const m = formatTwoDigitInt(month);
+
+    var start = `${year}-${m}-01 09:00:00`;
+    var end = `${year}-${m}-${daysInMonth} 17:00:00`;
+
+    start = timzone.tz(start, "YYYY-MM-DD HH:mm:ss", zone).format();
+    end = timzone.tz(end, "YYYY-MM-DD HH:mm:ss", zone).format();
+    return { start: start, end: end, daysInMonth: daysInMonth, month: m, year: year }
 }
+
 module.exports = {
-    getListEvent
+    getBookableDays,
+    getAvailableTimeSlot
 }

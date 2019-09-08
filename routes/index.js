@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const calServices = require("../calendar/calendarServices");
-const calActions = require("../calendar/calendarActions")
+const bookingServices = require("../services/bookingServices");
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
@@ -9,21 +8,19 @@ router.get('/', function(req, res, next) {
 });
 
 router.get("/days", function(req, res, next){
-  var year = req.query.year;
-  var month = req.query.month;
-  var returnValue = []
-  if (calActions.checkValidMonthYear(month, year)){
-    console.log("valid input")
-  }else{
-    console.log("invalid input")
-  }
-  month = parseInt(month)
-  year = parseInt(year)
-  calServices.getListEvent(month, year);
-  return res.status(200).json({
-    day:returnValue
-  })
+  bookingServices.getBookableDays(req, res, (status, result) => {
+    return res.status(status).json({
+      day: result
+    })
+  });
 });
+router.get("/timeslots", function(req, res, next){
+  bookingServices.getAvailableTimeSlots(req, res, (status, result) => {
+    return res.status(status).json({
+      timeslots: result
+    })
+  });
+})
 
 
 router.get("/timeslots", function(req, res, next){
