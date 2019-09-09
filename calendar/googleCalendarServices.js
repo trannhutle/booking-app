@@ -31,6 +31,7 @@ function getEventList(startTime, endTime, callback) {
 
 function insertEvent(startTime, endTime, callback) {
     let oauth2Client = oauth2Services.getOauth2Client();
+    console.log("Insert new event to google calendar")
     let event = {
         "Summary":"Add new event",
         "start":{
@@ -51,14 +52,12 @@ function insertEvent(startTime, endTime, callback) {
             console.log('The API returned an error: ' + error);
             return callback(false, null);
         }  
-        const events = resp.start;
-        if (events) {
-            console.log("Added event time: " + events.dateTime)
+        if (resp) {
             console.log("Add new event successfully");
         } else {
             console.log("Add new event failed")
         }
-        callback(true, events)
+        callback(true, resp)
     })
 }
 

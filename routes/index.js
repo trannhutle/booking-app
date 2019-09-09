@@ -23,19 +23,12 @@ router.get("/timeslots", function(req, res, next){
 })
 
 router.post("/book", function(req, res, next){
-  bookingServices.bookTimeslot(req, res, (status, result) => {
+  bookingServices.bookTimeslot(req, res, (status, message, result) => {
     return res.status(200).json({
-      timeslots: result
+      success: status,
+      message: message,
+      result: result
     })
   });
 })
-
-
-router.get("/timeslots", function(req, res, next){
-  res.render("index", {slot: "None"})
-});
-
-router.post("/book", function(req, res, next){
-  res.render("index", {slot: "None"})
-});
 module.exports = router;

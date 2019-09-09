@@ -9,7 +9,7 @@ const EndWorkingTime = "17:00:00";
 
 const getBookableDays = function (month, year, callback) {
     let monthInfo = getMonthInfo(month, year);
-    gCalendarServices.getEventList(monthInfo.start, monthInfo.end, (event) => {
+    gCalendarServices.getEventList(monthInfo.start, monthInfo.end, (isSuccess, event) => {
         var eventList = event; // Events on the list will be removed when they are valid
         let bookingDays = [];
         for (i = 1; i <= monthInfo.daysInMonth; i++) {
@@ -40,7 +40,7 @@ const getAvailableTimeSlot = function (day, month, year, callback) {
     let todayStr = `${year}-${formatTwoDigitInt(month)}-${formatTwoDigitInt(day)}`
     let today = getTodayInfo(todayStr);
 
-    gCalendarServices.getEventList(today.startDate, today.endDate, (event) => {
+    gCalendarServices.getEventList(today.startDate, today.endDate, (isSuccess, event) => {
         // Events on the list will be removed when they are valid
         var eventList = event;
         // Check if the event is on a date
@@ -54,49 +54,59 @@ const getAvailableTimeSlot = function (day, month, year, callback) {
 
 const checkTimeslotIsValid = function (slot, callback) {
     let startTime = moment.utc(`${slot.year}-${slot.month}-${slot.day}T${slot.hour}:${slot.minute}`, moment.HTML5_FMT.DATETIME_LOCAL);
+    console.log("aaa");
 
-    if (!isEventOnBussinessDays(startTime)){
-         return callback(false, "Cannot book outside bookable timeframe", [])
+    if (!isEventOnBussinessDays(startTime)) {
+        return callback(false, "Cannot book outside bookable timeframe", [])
     }
     let diff = moment(startTime).diff(moment.utc(), "minutes")
     // exact 24 hour
-    if (diff <= 1440){
+    console.log("bbb");
+    console.log("diff: " + diff);
+    if (diff <= 1440) {
+        console.log("ccc");
         return callback(false, "Cannot book with less than 24 hours in advance", [])
     }
+    console.log("ddd");
+    console.log("slot.day:" + slot.day);
+    console.log("slot.month:" + slot.month);
+    console.log("slot.year:" + slot.year );
     getAvailableTimeSlot(slot.day, slot.month, slot.year, (data) => {
         let timeSlots = data;
+        console.log(data);
         if (timeSlots.length == 0) {
             return callback(false, "Invalid time slot", [])
         }
         var foundItem = false;
-        timeSlots.forEach(bookedSlot => {
-            let startTime = moment.utc(bookedSlot.startTime, moment.ISO_8601);
-            if (startTime.isSame(startTime)){
+
+        for (var i = 0; i < timeSlots.length; i++){
+            let bookedSlot = timeSlots[i];
+            let start = moment.utc(bookedSlot.startTime, moment.ISO_8601);
+            if (startTime.isSame(start)) {
                 console.log("Found the slot");
                 foundItem = true;
                 break;
             }
-        });
-        if (!foundItem){
+        }
+        if (!foundItem) {
             return callback(false, "Invalid time slot", [])
-        }else{
+        } else {
             let endTime = startTime.clone().add(40, "minutes");
-            gCalendarServices.insertEvent(startTime.toISOString, endTime.startTime.toISOString, (isSuccess, data)=>{
-                if (isSuccess){
+            
+            gCalendarServices.insertEvent(startTime.toISOString(), endTime.toISOString(), (isSuccess, data) => {
+                if (isSuccess) {
+                    console.log(data);
                     return callback(true, "Add new booking successfully", {
-                        startTime :data.start.dateTime,
-                        endTime :data.end.dateTime
+                        startTime: data.data.start.dateTime,
+                        endTime: data.data.end.dateTime
                     })
-                }else{
+                } else {
                     return callback(false, "Insert new booking unsucessfully", [])
                 }
             })
         }
     })
 }
-
-
-
 function getEventsInDay(today, eventList) {
     let eventsInDay = [];
     eventList = eventList.filter((event, i) => {
@@ -116,7 +126,6 @@ function getEventsInDay(today, eventList) {
 }
 
 function findAvailableSlotsInDay(today, bookedEvents) {
-
     var events = bookedEvents;
     var availableSlots = [];
     if (events.length > 0) {
@@ -172,10 +181,10 @@ function findAvailableSlotsInDay(today, bookedEvents) {
 }
 
 function needABreak(previousEventTime, currentEventTime) {
-
     let startWorkingTime = moment.utc(StartWorkingTime, moment.HTML5_FMT.TIME_SECONDS)
     let prevEventTime = moment.utc(previousEventTime, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS);
-
+    console.log(startWorkingTime)
+    console.log(prevEventTime)
     // It does not need a break at the begining of the day
     if (startWorkingTime.hour() == prevEventTime.hour() && startWorkingTime.minutes() == prevEventTime.minutes()) {
         return false;
@@ -197,9 +206,8 @@ function findNextAvaiableSLots(lastEventEndTime, startAvailableTime, endAvailabl
     if (diffToNextEvent > 45) {
         var breakTime = 5;
         if (!isNeedABreak) {
-            `
-            breakTime = 0;`
-        } `
+            breakTime = 0;
+        }
         // Innitialise the first slot`
         var slot = createNewBookingSlot(startAvailableTime, breakTime, 40)
         while (moment(slot.startTime).isBefore(endAvailableTime) && moment(slot.endTime).isBefore(endAvailableTime)) {

@@ -49,7 +49,7 @@ const bookTimeslot = function (req, res, next) {
         minute:parseInt(minute),
     }
     calendarServices.checkTimeslotIsValid(slot, (status, message, data) => {
-        next(200, data) 
+        next(status, message, data) 
     });
 }
 
