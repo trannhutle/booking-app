@@ -1,13 +1,11 @@
 const calendarServices = require("../calendar/calendarServices")
-const calendarActions = require("../calendar/calendarActions")
 const moment = require("moment")
 
 
 const getBookableDays = function (req, res, next) {
-
     var month = req.query.month;
     var year = req.query.year;
-    if (!moment(`${year}-${month}`, "YYYY-MM").isValid()) {
+    if (!moment(`${year}-${month}`, moment.HTML5_FMT.MONTH).isValid()) {
         console.log(`Invalid input: ${month}-${year}`);
         return next(422, []);
     }
@@ -21,7 +19,7 @@ const getAvailableTimeSlots = function (req, res, next) {
     var day = req.query.day;
     var month = req.query.month;
     var year = req.query.year;
-    if (!moment(`${year}-${month}-${day}`, "YYYY-MM-DD").isValid()) {
+    if (!moment(`${year}-${month}-${day}`, moment.HTML5_FMT.DATE).isValid()) {
         console.log(`Invalid input: ${day}-${month}-${year}`);
         return next(422, []);
     }
@@ -37,7 +35,7 @@ const bookTimeslot = function (req, res, next) {
     var year = req.body.year;
     var hour = req.body.hour;
     var minute = req.body.minute;
-    if (!moment(`${year}-${month}-${day} ${hour}:${minute}`, "YYYY-MM-DD HH:mm").isValid()) {
+    if (!moment(`${year}-${month}-${day} ${hour}:${minute}`, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS).isValid()) {
         console.log(`Invalid input: ${day}-${month}-${year} ${hour}:${minute}`);
         return next(422, []);
     }
@@ -48,7 +46,7 @@ const bookTimeslot = function (req, res, next) {
         hour:parseInt(hour),
         minute:parseInt(minute),
     }
-    calendarServices.checkTimeslotIsValid(slot, (status, message, data) => {
+    calendarServices.bookTimeslot(slot, (status, message, data) => {
         next(status, message, data) 
     });
 }

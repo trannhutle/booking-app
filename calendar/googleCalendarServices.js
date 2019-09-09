@@ -1,23 +1,21 @@
 const oauth2Services = require("./oauth2Services");
+const appConfig = require("../appConfig")
 const { google } = require("googleapis");
 const calendar = google.calendar({ version: "v3" });
-const timezone = require("moment-timezone")
-// const zone = "Australia/Sydney";
-// const sydZone = timezone.tz(zone).format("Z");
 
 
 function getEventList(startTime, endTime, callback) {
     let oauth2Client = oauth2Services.getOauth2Client()
     calendar.events.list({
         auth: oauth2Client,
-        calendarId: "anltnm93@gmail.com",
-        timeZone: "UTC+00",
+        calendarId: oauth2Services.getCalendarId(),
+        timeZone: appConfig.UTC00,
         timeMin: startTime,
         timeMax: endTime,
     }, (error, resp) => {
         if (error) {
             console.log('The API returned an error: ' + error);
-            callback(true, null)
+            return callback(false, null)
         }
         const events = resp.data.items;
         if (events.length) {
@@ -36,16 +34,16 @@ function insertEvent(startTime, endTime, callback) {
         "Summary":"Add new event",
         "start":{
             "dateTime": startTime,
-            "timeZone": "UTC"
+            "timeZone": appConfig.UTC
         },
         "end":{
             "dateTime": endTime,
-            "timeZone": "UTC"
+            "timeZone": appConfig.UTC
         }
     }
     calendar.events.insert({
         auth: oauth2Client,
-        calendarId: "anltnm93@gmail.com",
+        calendarId: oauth2Services.getCalendarId(),
         resource: event
     }, (error, resp) => {
         if (error){

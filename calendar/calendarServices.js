@@ -1,112 +1,112 @@
 const gCalendarServices = require("./googleCalendarServices")
 const moment = require("moment")
-// const zone = "Australia/Sydney";
 const BookingDate = require("../dataModels/bookingDate");
 const BookingEvent = require("../dataModels/bookingEvent");
 const DayInfo = require("../dataModels/dayInfo")
-const StartWorkingTime = "09:00:00";
-const EndWorkingTime = "17:00:00";
+const appConfig = require("../appConfig")
 
+//ANCHOR  Get bookable days on a month
 const getBookableDays = function (month, year, callback) {
     let monthInfo = getMonthInfo(month, year);
     gCalendarServices.getEventList(monthInfo.start, monthInfo.end, (isSuccess, event) => {
-        var eventList = event; // Events on the list will be removed when they are valid
+        var eventList = event;
         let bookingDays = [];
-        for (i = 1; i <= monthInfo.daysInMonth; i++) {
-            // check event is on a dayutcNow
-            let d = formatTwoDigitInt(i);
-            let today = getTodayInfo(`${monthInfo.year}-${monthInfo.month}-${d}`);
+        if (isSuccess) {
+            for (i = 1; i <= monthInfo.daysInMonth; i++) {
+                // check event is on a dayutcNow
+                let d = formatTwoDigitInt(i);
+                let today = getTodayInfo(`${monthInfo.year}-${monthInfo.month}-${d}`);
 
-            // Check if the event is on a date
-            let result = getEventsInDay(today, eventList);
-            eventList = result.eventList;
-            var eventsInDay = result.eventsInDay;
-            let availableSlots = findAvailableSlotsInDay(today, eventsInDay);
-            let hasTimeSlot = false;
-            if (availableSlots.length > 0) {
-                hasTimeSlot = true;
+                // Check if the event is on a date
+                let result = getEventsInDay(today, eventList);
+                eventList = result.eventList;
+                var eventsInDay = result.eventsInDay;
+
+                // Find available slots on one day
+                let availableSlots = findAvailableSlotsInDay(today, eventsInDay);
+                let hasTimeSlot = false;
+                if (availableSlots.length > 0) {
+                    hasTimeSlot = true;
+                }
+                console.log(availableSlots);
+
+                let dInfo = new DayInfo();
+                dInfo.day = i;
+                dInfo.hasTimeSlots = hasTimeSlot;
+                bookingDays.push(dInfo);
             }
-            console.log(availableSlots);
-            let dInfo = new DayInfo();
-            dInfo.day = i;
-            dInfo.hasTimeSlots = hasTimeSlot;
-            bookingDays.push(dInfo);
+        } else {
+            console.log("There is an error while calling google API")
         }
         callback(bookingDays);
     })
 }
 
+//ANCHOR  Used for get the available timeslot on a specific day. 
 const getAvailableTimeSlot = function (day, month, year, callback) {
     let todayStr = `${year}-${formatTwoDigitInt(month)}-${formatTwoDigitInt(day)}`
     let today = getTodayInfo(todayStr);
 
     gCalendarServices.getEventList(today.startDate, today.endDate, (isSuccess, event) => {
-        // Events on the list will be removed when they are valid
-        var eventList = event;
-        // Check if the event is on a date
-        let result = getEventsInDay(today, eventList);
-        eventList = result.eventList;
-        var eventsInDay = result.eventsInDay;
-        var availableSlots = findAvailableSlotsInDay(today, eventsInDay);
+        var availableSlots = []
+        if (isSuccess) {
+            // Get events on a day
+            var eventList = event;
+            let result = getEventsInDay(today, eventList);
+            eventList = result.eventList;
+            let eventsInDay = result.eventsInDay;
+            // Find available slots on a day
+            availableSlots = findAvailableSlotsInDay(today, eventsInDay);
+        } else {
+            console.log("There is an error while calling to google API")
+        }
         callback(availableSlots);
     })
 }
-
-const checkTimeslotIsValid = function (slot, callback) {
+// ANCHOR Book a new timeslot on google calendar
+const bookTimeslot = function (slot, callback) {
     let startTime = moment.utc(`${slot.year}-${slot.month}-${slot.day}T${slot.hour}:${slot.minute}`, moment.HTML5_FMT.DATETIME_LOCAL);
-    console.log("aaa");
-
     if (!isEventOnBussinessDays(startTime)) {
-        return callback(false, "Cannot book outside bookable timeframe", [])
+        return callback(false, "Cannot book outside bookable timeframe", null)
     }
+    // Check 24hours before the available time slot
     let diff = moment(startTime).diff(moment.utc(), "minutes")
-    // exact 24 hour
-    console.log("bbb");
-    console.log("diff: " + diff);
-    if (diff <= 1440) {
-        console.log("ccc");
-        return callback(false, "Cannot book with less than 24 hours in advance", [])
+    if (diff <= 0) {
+        return callback(false, "Cannot book time in the past", null)
     }
-    console.log("ddd");
-    console.log("slot.day:" + slot.day);
-    console.log("slot.month:" + slot.month);
-    console.log("slot.year:" + slot.year );
-    getAvailableTimeSlot(slot.day, slot.month, slot.year, (data) => {
-        let timeSlots = data;
-        console.log(data);
-        if (timeSlots.length == 0) {
-            return callback(false, "Invalid time slot", [])
-        }
-        var foundItem = false;
+    if (diff <= appConfig.DayInMinute) {
+        return callback(false, "Cannot book with less than 24 hours in advance", null)
+    }
 
-        for (var i = 0; i < timeSlots.length; i++){
-            let bookedSlot = timeSlots[i];
-            let start = moment.utc(bookedSlot.startTime, moment.ISO_8601);
-            if (startTime.isSame(start)) {
-                console.log("Found the slot");
-                foundItem = true;
-                break;
+    // Check the input slot is valid
+    getAvailableTimeSlot(slot.day, slot.month, slot.year, (data) => {
+        if (data.length != 0) {
+            let timeSlots = data;
+            //  Check the time slot is valid
+            if (!isFoundTimeslot(startTime, timeSlots)) {
+                return callback(false, "Invalid time slot", null)
+            } else {
+                let endTime = startTime.clone().add(appConfig.Duration, "minutes");
+
+                // Insert event into google calendar
+                gCalendarServices.insertEvent(startTime.toISOString(), endTime.toISOString(), (isSuccess, data) => {
+                    if (isSuccess) {
+                        console.log(data);
+                        return callback(true, "Add new booking successfully", {
+                            startTime: data.data.start.dateTime,
+                            endTime: data.data.end.dateTime
+                        })
+                    } else {
+                        return callback(false, "Insert new booking unsucessfully", null)
+                    }
+                })
             }
-        }
-        if (!foundItem) {
-            return callback(false, "Invalid time slot", [])
         } else {
-            let endTime = startTime.clone().add(40, "minutes");
-            
-            gCalendarServices.insertEvent(startTime.toISOString(), endTime.toISOString(), (isSuccess, data) => {
-                if (isSuccess) {
-                    console.log(data);
-                    return callback(true, "Add new booking successfully", {
-                        startTime: data.data.start.dateTime,
-                        endTime: data.data.end.dateTime
-                    })
-                } else {
-                    return callback(false, "Insert new booking unsucessfully", [])
-                }
-            })
+            return callback(false, "Invalid time slot", null)
         }
     })
 }
+
 function getEventsInDay(today, eventList) {
     let eventsInDay = [];
     eventList = eventList.filter((event, i) => {
@@ -131,15 +131,7 @@ function findAvailableSlotsInDay(today, bookedEvents) {
     if (events.length > 0) {
         console.log("There are booked events: " + events.length);
         // Sort by time ascending
-        events = events.sort((a, b) => {
-            if (moment(a.endTime).isSameOrBefore(b.startTime)) {
-                return -1;
-            }
-            if (moment(a.startTime).isSameOrAfter(b.endTime)) {
-                return 1;
-            }
-            return 0;
-        });
+        events = sortByStartTimeAscending(events);
 
         // Find slots from start to the first booking slot                
         let firstBookedEvent = events[0];
@@ -150,8 +142,8 @@ function findAvailableSlotsInDay(today, bookedEvents) {
         for (var ii = 0; ii < events.length; ii++) {
             let bookedEvent = events[ii];
             if ((ii + 1) < events.length) {
-                utcNow
-                //
+
+                // Get the ending time of the final booking event
                 if (availableSlots.length > 0) {
                     lastEventEndTime = availableSlots[availableSlots.length - 1].endTime;
                 } else {
@@ -180,17 +172,29 @@ function findAvailableSlotsInDay(today, bookedEvents) {
     return availableSlots;
 }
 
+function sortByStartTimeAscending(events) {
+    events = events.sort((a, b) => {
+        if (moment(a.endTime).isSameOrBefore(b.startTime)) {
+            return -1;
+        }
+        if (moment(a.startTime).isSameOrAfter(b.endTime)) {
+            return 1;
+        }
+        return 0;
+    }); isFoundTimeslot
+    return events
+}
+
 function needABreak(previousEventTime, currentEventTime) {
-    let startWorkingTime = moment.utc(StartWorkingTime, moment.HTML5_FMT.TIME_SECONDS)
+    let startWorkingTime = moment.utc(appConfig.StartWorkingTime, moment.HTML5_FMT.TIME_SECONDS)
     let prevEventTime = moment.utc(previousEventTime, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS);
-    console.log(startWorkingTime)
-    console.log(prevEventTime)
+
     // It does not need a break at the begining of the day
     if (startWorkingTime.hour() == prevEventTime.hour() && startWorkingTime.minutes() == prevEventTime.minutes()) {
         return false;
     }
     let diffToNextEvent = prevEventTime.diff(currentEventTime, "minutes")
-    if (diffToNextEvent <= 5) {
+    if (diffToNextEvent <= appConfig.BreakTime) {
         return true;
     }
     return false;
@@ -203,18 +207,20 @@ function findNextAvaiableSLots(lastEventEndTime, startAvailableTime, endAvailabl
     let isNeedABreak = needABreak(lastEventEndTime, startAvailableTime);
     console.log("isNeedABreak: " + isNeedABreak);
 
-    if (diffToNextEvent > 45) {
-        var breakTime = 5;
+    if (diffToNextEvent > appConfig.TotalMeetingDuration) {
+
+        // If the booked event is just finished, we have to add break time
+        var breakTime = appConfig.BreakTime;
         if (!isNeedABreak) {
             breakTime = 0;
         }
         // Innitialise the first slot`
-        var slot = createNewBookingSlot(startAvailableTime, breakTime, 40)
+        var slot = createNewBookingSlot(startAvailableTime, breakTime, appConfig.Duration)
         while (moment(slot.startTime).isBefore(endAvailableTime) && moment(slot.endTime).isBefore(endAvailableTime)) {
             // console.log(slot);
             availableSlots.push(slot);
-            slot = createNewBookingSlot(slot.endTime, 5, 40);
-            // console.log("endAvailableTime: " + endAvailableTime)
+            slot = createNewBookingSlot(slot.endTime, appConfig.BreakTime, appConfig.Duration);
+            // console.log("endAvailableTime: " + endAvailableTiisFoundTimeslote)
             // console.log("slot.endTime: " + slot.endTime)
         }
     }
@@ -222,25 +228,27 @@ function findNextAvaiableSLots(lastEventEndTime, startAvailableTime, endAvailabl
 }
 
 function createNewBookingSlot(startTime, delayInMinute, duration) {
-    let be = new BookingEvent();
-    be.startTime = moment.utc(startTime, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS);
+    let event = new BookingEvent();
+    event.startTime = moment.utc(startTime, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS);
     if (delayInMinute) {
-        be.startTime.add(delayInMinute, "minutes");
+        event.startTime.add(delayInMinute, "minutes");
     }
-    be.endTime = be.startTime.clone().add(duration, "minutes").format();
-    be.startTime = be.startTime.format();
-    return be;
+    event.endTime = event.startTime.clone().add(duration, "minutes").format();
+    event.startTime = event.startTime.format();
+    return event;
 }
 
-function getTodayInfo(date) {
-    let d = moment.utc(date, "YYYY-MM-DD").format();
-    let starDay = moment.utc(date + " 09:00:00", moment.ISO_8601).format();
-    let endDay = moment.utc(date + " 17:00:00", moment.ISO_8601).format();
-    let today = new BookingDate();
-    today.date = d;
-    today.startDate = starDay;
-    today.endDate = endDay;
-    return today;
+function isFoundTimeslot(timeslotStart, timeSlots) {
+    for (var i = 0; i < timeSlots.length; i++) {
+        let bookedSlot = timeSlots[i];
+        let start = moment.utc(bookedSlot.startTime, moment.ISO_8601);
+        if (timeslotStart.isSame(start)) {
+            console.log("Found the slot");
+            foundItem = true;
+            return true;
+        }
+    }
+    return false;
 }
 
 function isEventOnBussinessDays(day) {
@@ -251,7 +259,9 @@ function isEventOnBussinessDays(day) {
     }
 
     let requestTime = day.clone().format(moment.HTML5_FMT.TIME_SECONDS)
-    if (moment(StartWorkingTime, moment.HTML5_FMT.TIME_SECONDS).isAfter(requestTime) || moment(EndWorkingTime, moment.HTML5_FMT.TIME_SECONDS).isBefore(requestTime)) {
+
+    if (moment(appConfig.StartWorkingTime, moment.HTML5_FMT.TIME_SECONDS).isAfter(moment(requestTime, moment.HTML5_FMT.TIME_SECONDS))
+        || moment(appConfig.EndWorkingTime, moment.HTML5_FMT.TIME_SECONDS).isBefore(moment(requestTime, moment.HTML5_FMT.TIME_SECONDS))) {
         console.log("Invalid working time");
         return false;
     }
@@ -267,7 +277,6 @@ function isEventOnDay(eventStart, eventEnd, today) {
 }
 
 function getDaysMonth(month, year) {
-    // Day 0 is the last day in the previous month
     var days = new Date(year, month, 0).getDate();
     return formatTwoDigitInt(days);
 }
@@ -279,17 +288,27 @@ function formatTwoDigitInt(number) {
 function getMonthInfo(month, year) {
     const daysInMonth = parseInt(getDaysMonth(month, year));
     const m = formatTwoDigitInt(month);
+    var startMonth = `${year}-${m}-01 ${appConfig.StartWorkingTime}`; // Month start day example: 2019-08-01 09:00:00
+    var endMonth = `${year}-${m}-${daysInMonth} ${appConfig.EndWorkingTime}`;  // Month end example: 2019-08-31 17:00:00
 
-    var start = `${year}-${m}-01 09:00:00`;
-    var end = `${year}-${m}-${daysInMonth} 17:00:00`;
+    startMonth = moment.utc(startMonth, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS).format();
+    endMonth = moment.utc(endMonth, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS).format();
+    return { start: startMonth, end: endMonth, daysInMonth: daysInMonth, month: m, year: year }
+}
 
-    start = moment.utc(start, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS).format();
-    end = moment.utc(end, moment.HTML5_FMT.DATETIME_LOCAL_SECONDS).format();
-    return { start: start, end: end, daysInMonth: daysInMonth, month: m, year: year }
+function getTodayInfo(date) {
+    let d = moment.utc(date, moment.HTML5_FMT.DATE).format();
+    let starDay = moment.utc(`${date} ${appConfig.StartWorkingTime}`, moment.ISO_8601).format(); // Day start day example: 2019-08-01 09:00:00
+    let endDay = moment.utc(`${date} ${appConfig.EndWorkingTime}`, moment.ISO_8601).format(); // Day start day example: 2019-08-01 17:00:00
+    let today = new BookingDate();
+    today.date = d;
+    today.startDate = starDay;
+    today.endDate = endDay;
+    return today;
 }
 
 module.exports = {
     getBookableDays,
     getAvailableTimeSlot,
-    checkTimeslotIsValid
+    bookTimeslot
 }
